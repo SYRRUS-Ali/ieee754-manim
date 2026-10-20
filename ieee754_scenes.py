@@ -29,7 +29,7 @@ EXP_COLOR = RED
 MANT_COLOR = "#4FC3F7"
 TAIL_COLOR = YELLOW
 CELL_H = 0.42
-MONO = "DejaVu Sans Mono"
+MONO = "Consolas"
 
 
 def field_color(i):
@@ -137,7 +137,7 @@ class BuildDouble(Scene):
 
         # --- intro and the empty 64-bit layout ---
         title = Text("IEEE-754 double precision (64 bit)", font_size=44)
-        authors = Text("Ali Makhmud, Mohamad Mehrez  |  group 352", font_size=24, color=GREY_B)
+        authors = Text("Ali Makhmud, Mohamad Mehrez  |  group 231-352", font_size=24, color=GREY_B)
         authors.next_to(title, DOWN, buff=0.4)
         self.play(Write(title), run_time=1.5)
         self.play(FadeIn(authors))
