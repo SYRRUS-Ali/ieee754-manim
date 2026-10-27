@@ -16,7 +16,6 @@ from ieee754_utils import (
     sci_tex,
     split_fields,
     times_two_steps,
-    weight_str,
 )
 
 # input numbers, everything else is computed from them
@@ -100,6 +99,30 @@ def caption(text, y=0.55):
     return Text(text, font_size=28).to_edge(LEFT, buff=0.6).set_y(y)
 
 
+def row_labels(table, texts=("Place value", "Bit"), font_size=22):
+    # names of the two table rows, placed left of the table
+    boxes = table[0]
+    labels = VGroup()
+    for text, box in zip(texts, boxes[:2]):
+        label = Text(text, font_size=font_size, color=GREY_B).set_y(box.get_y())
+        labels.add(label.align_to(boxes.get_left() + LEFT * 0.25, RIGHT))
+    return labels
+
+
+def terms_row(cols, digits, terms, y, font_size=32, color=WHITE, max_w=None):
+    # the place values of the 1 bits, each one under its own column, joined by "+"
+    picked = [i for i, d in enumerate(digits) if d == "1"]
+    term_mobs = VGroup(*[MathTex(terms[i], font_size=font_size, color=color).move_to([cols[i].get_x(), y, 0]) for i in picked])
+    for term in term_mobs:
+        if max_w is not None and term.width > max_w:
+            term.scale_to_fit_width(max_w)
+    pluses = VGroup(*[
+        MathTex("+", font_size=font_size).move_to([(a.get_right()[0] + b.get_left()[0]) / 2, y, 0])
+        for a, b in zip(term_mobs[:-1], term_mobs[1:])
+    ])
+    return picked, term_mobs, pluses
+
+
 def place_value_table(headers, digits, point_after=None, col_w=1.0, digit_color=WHITE):
     # one column per digit: weight on top, digit below; optional binary point
     boxes = VGroup()
@@ -163,30 +186,84 @@ class BuildDouble(Scene):
         # --- step 1: binary with a place-value table ---
         int_bits, frac_bits = binary_expansion(abs(value), exact_frac_length(abs(value), 8))
         digits = int_bits + frac_bits
-        header_strs = [str(2**k) for k in range(len(int_bits) - 1, -1, -1)]
-        header_strs += [weight_str(k) for k in range(1, len(frac_bits) + 1)]
+        weights = [Fraction(2) ** k for k in range(len(int_bits) - 1, -len(frac_bits) - 1, -1)]
+        header_strs = [exact_decimal(w) for w in weights]
         headers = [Text(h, font_size=24) for h in header_strs]
         table, heads, digit_mobs, point = place_value_table(headers, digits, point_after=len(int_bits))
-        table.move_to([0, -0.9, 0])
+        labels = row_labels(table)
+        VGroup(table, labels).move_to([0.3, -1.2, 0])
 
-        cap = caption(f"1.  Write {x_str} in binary")
+        cap = caption(f"Step 1.  Write {x_str} in binary")
         self.play(FadeIn(cap))
-        self.play(Create(table[0]), FadeIn(heads), run_time=1.5)
-        self.play(LaggedStart(*[FadeIn(d, shift=DOWN * 0.2) for d in digit_mobs], lag_ratio=0.15), FadeIn(point))
+        self.play(Create(table[0]), FadeIn(heads), FadeIn(point), run_time=1.5)
+        self.play(FadeIn(labels, shift=RIGHT * 0.2))
+        self.play(Indicate(labels[0]), Indicate(heads, color=YELLOW, scale_factor=1.05))
+        self.play(Indicate(labels[1]))
 
+        # the number is split into its integer and fraction parts, each one goes over its half of the table
+        int_part = abs(value).numerator // abs(value).denominator
+        frac_part = abs(value) - int_part
+        number = MathTex(str(int_part), "." + exact_decimal(frac_part)[2:], font_size=48).move_to([0.3, -0.05, 0])
+        self.play(Write(number))
+        self.wait(0.5)
+        rem_y = -0.05
+        rem_int = MathTex(str(int_part), font_size=40, color=YELLOW)
+        rem_int.move_to([heads[: len(int_bits)].get_x(), rem_y, 0])
+        rem_frac = MathTex(exact_decimal(frac_part), font_size=40, color=YELLOW)
+        rem_frac.move_to([heads[len(int_bits):].get_x(), rem_y, 0])
+        self.play(ReplacementTransform(number[0], rem_int), ReplacementTransform(number[1], rem_frac), run_time=1.2)
+
+        # fill the bits from left to right: take the place value if it still fits into what is left
+        rest = [Fraction(int_part), frac_part]
+        trackers = [rem_int, rem_frac]
+        for i, w in enumerate(weights):
+            part = 0 if i < len(int_bits) else 1
+            r = rest[part]
+            r_str, w_str = exact_decimal(r), exact_decimal(w)
+            col = SurroundingRectangle(VGroup(table[0][2 * i], table[0][2 * i + 1]), color=YELLOW, buff=0.03)
+            if digits[i] == "1":
+                rest[part] = r - w
+                note = MathTex(rf"{r_str} \ge {w_str}", r"\;\Rightarrow\;", "1", rf",\quad {r_str} - {w_str} = {exact_decimal(rest[part])}", font_size=34)
+            else:
+                note = MathTex(rf"{r_str} < {w_str}", r"\;\Rightarrow\;", "0", font_size=34)
+            note[2].set_color(YELLOW)
+            note.move_to([0, -2.45, 0])
+            self.play(Create(col), FadeIn(note), run_time=0.45)
+            anims = [TransformFromCopy(note[2], digit_mobs[i])]
+            if rest[part] != r:
+                new_tracker = MathTex(exact_decimal(rest[part]), font_size=40, color=YELLOW).move_to(trackers[part])
+                anims.append(Transform(trackers[part], new_tracker))
+            self.play(*anims, run_time=0.5)
+            self.play(FadeOut(col), FadeOut(note), run_time=0.3)
+        self.play(FadeOut(rem_int), FadeOut(rem_frac))
+
+        # every 1 bit adds its place value, every 0 bit adds nothing
         ones = [i for i, d in enumerate(digits) if d == "1"]
-        self.play(*[heads[i].animate.set_color(YELLOW) for i in ones], *[digit_mobs[i].animate.set_color(YELLOW) for i in ones])
-        sum_line = MathTex(" + ".join(header_strs[i] for i in ones) + f" = {x_str}", font_size=36)
-        sum_line.next_to(table, DOWN, buff=0.45)
-        bin_line = MathTex(rf"{x_str} = {int_bits}.{frac_bits}_2", font_size=40).next_to(sum_line, DOWN, buff=0.35)
-        self.play(Write(sum_line))
+        zeros = [i for i, d in enumerate(digits) if d == "0"]
+        rule = Text("bit 1  →  take its place value,    bit 0  →  skip it", font_size=26).move_to([0.3, rem_y, 0])
+        self.play(FadeIn(rule))
+        self.play(
+            *[heads[i].animate.set_color(YELLOW) for i in ones], *[digit_mobs[i].animate.set_color(YELLOW) for i in ones],
+            *[heads[i].animate.set_opacity(0.35) for i in zeros], *[digit_mobs[i].animate.set_opacity(0.35) for i in zeros],
+        )
+        picked, term_mobs, pluses = terms_row(digit_mobs, digits, header_strs, -2.45, font_size=28, color=YELLOW, max_w=0.68)
+        arrows = VGroup(*[
+            Arrow([digit_mobs[i].get_x(), -1.92, 0], term.get_top() + UP * 0.05, buff=0, stroke_width=3,
+                  max_tip_length_to_length_ratio=0.35, color=YELLOW)
+            for i, term in zip(picked, term_mobs)
+        ])
+        self.play(LaggedStart(*[
+            AnimationGroup(GrowArrow(a), TransformFromCopy(heads[i], t)) for i, a, t in zip(picked, arrows, term_mobs)
+        ], lag_ratio=0.4), run_time=3)
+        self.play(FadeIn(pluses))
+        bin_line = MathTex(rf"{x_str} = {int_bits}.{frac_bits}_2", font_size=40).move_to([0.3, -3.35, 0])
         self.play(Write(bin_line))
         self.wait(2)
-        self.play(FadeOut(table), FadeOut(sum_line), FadeOut(cap), FadeOut(bin_line))
+        self.play(*[FadeOut(m) for m in [table, labels, cap, rule, arrows, term_mobs, pluses, bin_line]])
 
         # --- step 2: normalize by moving the binary point ---
         e, lead = normalize(int_bits, frac_bits)
-        cap = caption("2.  Normalize: move the point so that one 1 is left of it")
+        cap = caption("Step 2.  Normalize: move the point so that one 1 is left of it")
         row = VGroup(*[Text(d, font=MONO, font_size=44) for d in digits])
         for i, d in enumerate(row):
             d.move_to([i * 0.5, 0, 0])
@@ -211,21 +288,27 @@ class BuildDouble(Scene):
         if lead > 0:
             self.play(FadeOut(row[:lead]))
 
+        # the moving row itself turns into the normalized form, so it is not written twice
         rest = digits[lead + 1:].rstrip("0") or "0"
-        norm_line = MathTex(f"{x_str} =", "1.", f"{rest}_2", rf"\cdot\, 2^{{{e}}}", font_size=40)
-        norm_line.next_to(row, DOWN, buff=0.6)
+        norm_line = MathTex(f"{x_str} =", "1.", f"{rest}_2", rf"\cdot\, 2^{{{e}}}", font_size=48)
+        norm_line.move_to([0, -1.1, 0])
         norm_line[2].set_color(MANT_COLOR)
         norm_line[3].set_color(EXP_COLOR)
-        self.play(Write(norm_line))
+        self.play(
+            FadeIn(norm_line[0], shift=RIGHT * 0.3),
+            ReplacementTransform(VGroup(row[lead], dot), norm_line[1]),
+            ReplacementTransform(row[lead + 1:], norm_line[2]),
+            ReplacementTransform(exp_label, norm_line[3]),
+            run_time=1.5,
+        )
         self.wait(1.5)
 
         # keep the normalized form as a reference for the next steps
-        self.play(FadeOut(row[lead:]), FadeOut(dot), FadeOut(exp_label), FadeOut(cap),
-                  norm_line.animate.move_to([0, -0.15, 0]))
+        self.play(FadeOut(cap), norm_line.animate.scale(40 / 48).move_to([0, -0.15, 0]))
 
         # --- step 3: biased exponent ---
         assert E == e + BIAS
-        cap = caption("3.  Exponent:  E = e + 1023", y=0.55)
+        cap = caption("Step 3.  Exponent:  E = e + 1023", y=0.55)
         e_line = MathTex(f"E = {e} + {BIAS} = {E} =", font_size=40)
         e_digits = VGroup(*[Text(b, font=MONO, font_size=36, color=EXP_COLOR) for b in e_bits])
         e_digits.arrange(RIGHT, buff=0.08)
@@ -247,27 +330,56 @@ class BuildDouble(Scene):
         # --- step 4: mantissa with place values 2^-1, 2^-2, ... ---
         shown = m_bits.rstrip("0") or "0"
         n = min(len(shown), 12)
-        m_heads = [MathTex(f"2^{{-{k}}}", font_size=32) for k in range(1, n + 1)]
-        m_table, _, m_digit_mobs, _ = place_value_table(m_heads, m_bits[:n], col_w=0.8, digit_color=MANT_COLOR)
-        m_table.move_to([0, -1.55, 0])
+        m_head_strs = [f"2^{{-{k}}}" for k in range(1, n + 1)]
+        m_heads = [MathTex(h, font_size=32) for h in m_head_strs]
+        m_table, m_head_mobs, m_digit_mobs, _ = place_value_table(m_heads, m_bits[:n], col_w=0.9, digit_color=MANT_COLOR)
+        m_labels = row_labels(m_table)
+        VGroup(m_table, m_labels).move_to([-1.2, -1.3, 0])
         m_frac = Fraction(int(m_bits, 2), 2**MANT_BITS)
-        m_line = MathTex(rf"\frac{{M}}{{2^{{52}}}} = 0.{shown}_2 = {exact_decimal(m_frac)}", font_size=36)
-        m_line.next_to(m_table, DOWN, buff=0.35)
 
-        cap = caption("4.  Mantissa: the bits after the leading 1", y=0.55)
+        cap = caption("Step 4.  Mantissa: the bits after the leading 1", y=0.55)
         self.play(FadeIn(cap), Indicate(norm_line[2], color=MANT_COLOR))
-        self.play(Create(m_table[0]), FadeIn(m_table[1]))
+        self.play(Create(m_table[0]), FadeIn(m_table[1]), FadeIn(m_labels))
         self.play(TransformFromCopy(norm_line[2][:n], m_digit_mobs), run_time=1.5)
         self.play(LaggedStart(*[TransformFromCopy(m_digit_mobs[i], bit_mobs[12 + i]) for i in range(n)], lag_ratio=0.1), run_time=2)
         zeros_note = Text(f"the other {MANT_BITS - n} bits are 0", font_size=24, color=GREY_B)
         zeros_note.next_to(cap, RIGHT, buff=0.6)
         self.play(LaggedStart(*[FadeIn(b) for b in bit_mobs[12 + n:]], lag_ratio=0.02), FadeIn(zeros_note), run_time=1.5)
-        self.play(Write(m_line))
-        self.wait(1.5)
-        self.play(FadeOut(cap), FadeOut(zeros_note), FadeOut(m_table), FadeOut(m_line))
+
+        # what the mantissa bits are worth: the same place value idea as in step 1, now only after the point
+        picked, m_terms, m_pluses = terms_row(m_digit_mobs, m_bits[:n], m_head_strs, -2.4, font_size=32, color=MANT_COLOR)
+        m_arrows = VGroup(*[
+            Arrow([m_digit_mobs[i].get_x(), -2.02, 0], term.get_top() + UP * 0.03, buff=0, stroke_width=3,
+                  max_tip_length_to_length_ratio=0.4, color=MANT_COLOR)
+            for i, term in zip(picked, m_terms)
+        ])
+        m_sum = MathTex(f"= {exact_decimal(m_frac)}", font_size=32).next_to(m_terms[-1], RIGHT, buff=0.25)
+        self.play(*[m_digit_mobs[i].animate.set_opacity(0.35) for i in range(n) if m_bits[i] == "0"])
+        self.play(LaggedStart(*[
+            AnimationGroup(GrowArrow(a), TransformFromCopy(m_head_mobs[i], t)) for i, a, t in zip(picked, m_arrows, m_terms)
+        ], lag_ratio=0.4), run_time=2.5)
+        self.play(FadeIn(m_pluses), Write(m_sum))
+        self.wait(1)
+
+        # this sum is the M/2^52 part of the formula: M is the 52 bits read as one whole number,
+        # dividing by 2^52 moves the point back in front of them
+        m_line = MathTex(r"\frac{M}{2^{52}}", "=", rf"0.{shown}_2", "=", exact_decimal(m_frac), font_size=36)
+        m_line[0].set_color(MANT_COLOR)
+        why = VGroup(
+            Tex(r"$M$ = the 52 mantissa bits read as one integer", font_size=32),
+            Tex(r"$\div\, 2^{52}$ puts the point back in front of them", font_size=32),
+        ).arrange(DOWN, aligned_edge=LEFT, buff=0.15).set_color(GREY_B)
+        VGroup(m_line, why).arrange(RIGHT, buff=0.6).move_to([0, -3.3, 0])
+        m_box = SurroundingRectangle(formula[5], color=MANT_COLOR, buff=0.08)
+        self.play(Create(m_box), Indicate(norm_line[1:3], color=MANT_COLOR))
+        self.play(TransformFromCopy(formula[5], m_line[0]), FadeIn(why[0]))
+        self.play(FadeIn(why[1]))
+        self.play(Write(m_line[1:]))
+        self.wait(2.5)
+        self.play(*[FadeOut(m) for m in [cap, zeros_note, m_table, m_labels, m_arrows, m_terms, m_pluses, m_sum, m_line, why, m_box]])
 
         # --- step 5: sign ---
-        cap = caption("5.  Sign", y=0.55)
+        cap = caption("Step 5.  Sign", y=0.55)
         relation = ">" if s_bit == "0" else "<"
         s_line = MathTex(f"{exact_decimal(value)} {relation} 0", r"\;\Rightarrow\;", f"S = {s_bit}", font_size=44)
         s_line[2].set_color(SIGN_COLOR)
@@ -281,7 +393,7 @@ class BuildDouble(Scene):
         # --- step 6: back from the bits to the number ---
         decoded = decode_fields(s_bit, e_bits, m_bits)
         assert decoded == Fraction(bits_to_double(bits))
-        cap = caption("6.  Back to decimal: plug S, E, M into the formula", y=0.55)
+        cap = caption("Step 6.  Back to decimal: plug S, E, M into the formula", y=0.55)
         vals = MathTex(
             f"S = {s_bit}", r",\qquad", f"E = {E}", r",\qquad", rf"\frac{{M}}{{2^{{52}}}} = {exact_decimal(m_frac)}",
             font_size=38,
@@ -306,11 +418,17 @@ class BuildDouble(Scene):
         line1[3].set_color(EXP_COLOR)
         line1[5].set_color(MANT_COLOR)
         line2 = MathTex(
-            rf"= {(-1) ** int(s_bit)} \cdot {exact_decimal(power)} \cdot {exact_decimal(1 + m_frac)}", font_size=40
+            "=", f"{(-1) ** int(s_bit)}", r"\cdot", exact_decimal(power), r"\cdot", exact_decimal(1 + m_frac), font_size=40
         ).next_to(line1, DOWN, buff=0.3)
+        line2[1].set_color(SIGN_COLOR)
+        line2[3].set_color(EXP_COLOR)
+        line2[5].set_color(MANT_COLOR)
         line3 = MathTex(f"= {exact_decimal(decoded)}", font_size=48).next_to(line2, DOWN, buff=0.3)
         self.play(Write(line1), run_time=1.5)
-        self.play(Write(line2))
+        self.play(FadeIn(line2[0]), FadeIn(line2[2]), FadeIn(line2[4]))
+        # each colored part of the formula turns into its own value, in the same color
+        for part in (1, 3, 5):
+            self.play(TransformFromCopy(line1[part], line2[part]), run_time=0.8)
         self.play(Write(line3))
         self.play(Create(SurroundingRectangle(line3, color=YELLOW, buff=0.15)))
         hex_note = Text(f"hex: 0x{int(bits, 2):016X}", font=MONO, font_size=22, color=GREY_B)
