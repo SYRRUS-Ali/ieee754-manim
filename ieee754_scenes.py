@@ -460,30 +460,66 @@ class RoundoffError(Scene):
 
         # --- multiply by 2 method for the fraction part ---
         int_part = true_value.numerator // true_value.denominator
-        cap = Text("Fraction part to binary: multiply by 2, the integer part is the next bit", font_size=26)
+        cap = Text("Step 1. Convert the fraction to binary: multiply by 2", font_size=26)
         cap.to_edge(UP, buff=0.6)
         steps = times_two_steps(true_value - int_part, 8)
         lines = VGroup()
         for frac, product, digit, _ in steps:
             line = MathTex(
-                rf"{exact_decimal(frac)} \cdot 2 = {exact_decimal(product)}", r"\;\rightarrow\;", str(digit),
+                exact_decimal(frac), r"\cdot 2 =", exact_decimal(product), r"\;\rightarrow\;", str(digit),
                 font_size=38,
             )
-            line[2].set_color(YELLOW)
+            line[0].set_color(MANT_COLOR)
+            line[4].set_color(YELLOW)
             lines.add(line)
-        lines.arrange(DOWN, aligned_edge=LEFT, buff=0.22).move_to([-1.5, -0.4, 0])
-        self.play(FadeIn(cap))
-        for line in lines:
-            self.play(FadeIn(line, shift=DOWN * 0.1), run_time=0.6)
+        lines.arrange(DOWN, aligned_edge=LEFT, buff=0.22).move_to([-3.2, -0.4, 0])
+        legend = Text(f"Start with {x_str}; next input = product minus its integer part.", font_size=23, color=GREY_B)
+        legend.next_to(cap, DOWN, buff=0.3)
+        self.play(FadeIn(cap), FadeIn(legend))
         bits_so_far = "".join(str(d) for _, _, d, _ in steps)
-        collected = MathTex(rf"{x_str} = {int_part}.{bits_so_far}\ldots_2", font_size=40, color=YELLOW)
-        collected.next_to(lines, RIGHT, buff=1.0)
+        collected_digits = VGroup(*[
+            Text(d, font=MONO, font_size=30, color=YELLOW) for d in bits_so_far
+        ]).arrange(RIGHT, buff=0.06)
+        collected_prefix = MathTex(rf"{x_str} = {int_part}.", font_size=36)
+        collected_suffix = MathTex(r"\ldots_2", font_size=36)
+        collected = VGroup(collected_prefix, collected_digits, collected_suffix)
+        collected.arrange(RIGHT, buff=0.08).move_to([3.2, -1.0, 0])
+        order_note = Text('Read top to bottom; append bits left to right.', font_size=22, color=YELLOW)
+        order_note.next_to(collected, DOWN, buff=0.35)
+        self.play(Write(collected_prefix), FadeIn(order_note))
+        detail = VGroup()
+        previous_remainder = None
+        for i, (frac, product, digit, _) in enumerate(steps):
+            remainder = product - digit
+            detail_new = VGroup(
+                Text("Split the product into integer + fraction", font_size=22, color=GREY_B),
+                MathTex(exact_decimal(product), "=", str(digit), "+", exact_decimal(remainder), font_size=34),
+                MathTex(r"\text{next input} =", exact_decimal(product), "-", str(digit), "=", exact_decimal(remainder), font_size=30),
+            ).arrange(DOWN, buff=0.22).move_to([3.2, 1.0, 0])
+            detail_new[1][2].set_color(YELLOW)
+            detail_new[1][4].set_color(MANT_COLOR)
+            detail_new[2][3].set_color(YELLOW)
+            detail_new[2][5].set_color(MANT_COLOR)
+            if previous_remainder is None:
+                self.play(FadeIn(lines[i][:4], shift=DOWN * 0.1), run_time=0.8)
+            else:
+                self.play(TransformFromCopy(previous_remainder, lines[i][0], path_arc=PI / 4), run_time=1.3)
+                self.play(FadeIn(lines[i][1:4]), run_time=0.6)
+            self.play(FadeOut(detail), FadeIn(detail_new))
+            detail = detail_new
+            self.play(Indicate(detail[1][2], color=YELLOW), run_time=0.6)
+            self.play(TransformFromCopy(detail[1][2], lines[i][4]), run_time=0.8)
+            self.play(TransformFromCopy(lines[i][4], collected_digits[i], path_arc=-PI / 4), run_time=1.3)
+            self.play(Indicate(detail[2][5], color=MANT_COLOR), run_time=0.6)
+            previous_remainder = detail[2][5]
+            self.wait(0.7)
+        self.play(Write(collected_suffix))
         if steps and steps[-1][3]:
             # the fraction came back to an earlier value, so the bits repeat forever
             first = next(i for i, s in enumerate(steps) if s[0] == steps[-1][0])
             boxes = VGroup(
-                SurroundingRectangle(lines[first][0], color=ORANGE, buff=0.06),
-                SurroundingRectangle(lines[-1][0], color=ORANGE, buff=0.06),
+                SurroundingRectangle(lines[first][:3], color=ORANGE, buff=0.06),
+                SurroundingRectangle(lines[-1][:3], color=ORANGE, buff=0.06),
             )
             repeat_note = Text("same value again: the bits repeat forever", font_size=24, color=ORANGE)
             repeat_note.next_to(lines, DOWN, buff=0.35).align_to(lines, LEFT)
@@ -491,9 +527,9 @@ class RoundoffError(Scene):
         else:
             boxes = VGroup()
             repeat_note = VGroup()
-        self.play(Write(collected))
         self.wait(2)
-        self.play(FadeOut(cap), FadeOut(lines), FadeOut(boxes), FadeOut(repeat_note), FadeOut(collected))
+        self.play(FadeOut(cap), FadeOut(lines), FadeOut(boxes), FadeOut(repeat_note), FadeOut(collected),
+                  FadeOut(legend), FadeOut(detail), FadeOut(order_note))
 
         # --- long binary row, more bits than a double can hold ---
         int_bits, frac_bits = binary_expansion(true_value, SCENE2_FRAC_BITS)
@@ -507,7 +543,7 @@ class RoundoffError(Scene):
             return [(row[k - 1].get_x() + row[k].get_x()) / 2, row[0].get_bottom()[1] + 0.05, 0]
 
         dot = Dot(radius=0.05).move_to(point_at(len(int_bits)))
-        cap = Text(f"{x_str} in binary, {SCENE2_FRAC_BITS} bits after the point (and it never ends)", font_size=26)
+        cap = Text(f"Step 1 result. {x_str} in binary: {SCENE2_FRAC_BITS} fractional bits, continuing forever", font_size=25)
         cap.to_edge(UP, buff=0.6)
         self.play(FadeIn(cap))
         self.play(FadeIn(row[: len(int_bits)]), FadeIn(dot))
@@ -517,14 +553,22 @@ class RoundoffError(Scene):
 
         # --- normalize ---
         e, lead = normalize(int_bits, frac_bits)
-        new_cap = Text("Normalize: move the point so that one 1 is left of it", font_size=26)
+        new_cap = Text("Step 2. Normalize: leave one 1 before the point", font_size=26)
         new_cap.move_to(cap)
         self.play(Transform(cap, new_cap))
         k = len(int_bits)
         step = -1 if k > lead + 1 else 1
+        power = MathTex(r"\times 2^{0}", font_size=38, color=EXP_COLOR)
+        power.move_to([point_at(k)[0], -0.6, 0])
+        shift_note = Text('Each step right multiplies by 2; compensate with an exponent one lower.', font_size=24, color=GREY_B).set_y(-1.5)
+        self.play(Write(power), FadeIn(shift_note))
         while k != lead + 1:
             k += step
-            self.play(dot.animate.move_to(point_at(k)), run_time=0.5)
+            exponent = len(int_bits) - k
+            new_power = MathTex(rf"\times 2^{{{exponent}}}", font_size=38, color=EXP_COLOR)
+            new_power.move_to([point_at(k)[0], -0.6, 0])
+            self.play(dot.animate.move_to(point_at(k)), Transform(power, new_power), run_time=1)
+            self.wait(0.5)
         if lead > 0:
             self.play(FadeOut(row[:lead]))
         after = digits[lead + 1:]
@@ -532,7 +576,13 @@ class RoundoffError(Scene):
         norm_line[1].set_color(MANT_COLOR)
         norm_line[2].set_color(EXP_COLOR)
         norm_line.move_to([0, -0.7, 0])
-        self.play(Write(norm_line))
+        mantissa_outline = SurroundingRectangle(row[lead + 1:lead + 13], color=MANT_COLOR, buff=0.08)
+        self.play(FadeOut(shift_note))
+        self.play(row[lead + 1:].animate.set_color(MANT_COLOR), Create(mantissa_outline))
+        self.play(Write(norm_line[:2]), ReplacementTransform(power, norm_line[2]), run_time=2)
+        self.play(Indicate(row[lead + 1:lead + 13], color=MANT_COLOR),
+                  Indicate(norm_line[1], color=MANT_COLOR))
+        self.play(FadeOut(mantissa_outline))
         self.wait(1)
 
         # --- the 64-bit grid, exponent and sign ---
@@ -541,8 +591,18 @@ class RoundoffError(Scene):
         cells, deco = make_bar(cell_w, -6.8, 2.6, with_dimension=False)
         self.play(LaggedStart(*[FadeIn(c) for c in cells], lag_ratio=0.02), FadeIn(deco), run_time=1.5)
         bit_mobs = cell_digits(bits, cells, 14)
+        step_header = Text("Step 3. Encode the exponent and sign", font_size=26).set_y(1.45)
+        self.play(FadeIn(step_header))
 
         assert E == e + BIAS
+        bias_note = VGroup(
+            Text('The exponent field has 11 bits. IEEE 754 defines its bias as:', font_size=25, color=EXP_COLOR),
+            MathTex(r"B = 2^{11-1} - 1 = 1023,\qquad E = e + B", font_size=36),
+            Text('Bias encodes negative powers using an unsigned exponent field.', font_size=23, color=GREY_B),
+        ).arrange(DOWN, buff=0.22).move_to([0, -2.15, 0])
+        self.play(Write(bias_note), run_time=2)
+        self.wait(2)
+        self.play(FadeOut(bias_note))
         e_line = MathTex(f"E = {e} + {BIAS} = {E} =", font_size=36)
         e_digits = VGroup(*[Text(b, font=MONO, font_size=32, color=EXP_COLOR) for b in e_bits]).arrange(RIGHT, buff=0.07)
         VGroup(e_line, e_digits).arrange(RIGHT, buff=0.15).move_to([0, -1.8, 0])
@@ -557,14 +617,14 @@ class RoundoffError(Scene):
         self.play(Write(s_line))
         self.play(TransformFromCopy(s_line[2][-1], bit_mobs[0]))
         self.wait(0.5)
-        self.play(FadeOut(e_line), FadeOut(e_digits), FadeOut(s_line), FadeOut(norm_line))
+        self.play(FadeOut(e_line), FadeOut(e_digits), FadeOut(s_line), FadeOut(norm_line), FadeOut(step_header))
 
         # --- lay the bits after the leading 1 under the mantissa field ---
         row_y = 2.0
         small = VGroup()
         for i, d in enumerate(row):
             pos = i - lead - 1  # position after the leading 1
-            small.add(Text(digits[i], font=MONO, font_size=14).move_to([cells[12].get_x() + pos * cell_w, row_y, 0]))
+            small.add(Text(digits[i], font=MONO, font_size=14, color=MANT_COLOR if i > lead else WHITE).move_to([cells[12].get_x() + pos * cell_w, row_y, 0]))
         small_dot = Dot(radius=0.03).move_to([cells[12].get_left()[0], small[0].get_bottom()[1] + 0.03, 0])
         self.play(
             *[Transform(row[i], small[i]) for i in range(lead, len(row))],
@@ -578,6 +638,7 @@ class RoundoffError(Scene):
 
         kept_mobs = row[lead + 1: lead + 1 + MANT_BITS]
         tail_mobs = row[lead + 1 + MANT_BITS:]
+        self.play(tail_mobs.animate.set_color(TAIL_COLOR))
         kept_box = SurroundingRectangle(kept_mobs, color=MANT_COLOR, buff=0.05)
         tail_left = cells[63].get_right()[0]
         tail_box = Rectangle(width=8, height=kept_box.height)
@@ -602,7 +663,7 @@ class RoundoffError(Scene):
             case = "first dropped bit is 1 and the rest is not 0  ->  round up"
         else:
             case = "exactly half way  ->  round to the even neighbour"
-        rule = Text("Round to nearest, ties to even", font_size=30).move_to([0, 0.3, 0])
+        rule = Text("Step 4. Round the mantissa: nearest, ties to even", font_size=28).move_to([0, 0.3, 0])
         case_text = Text(case, font_size=26).next_to(rule, DOWN, buff=0.35)
         guard_box = SurroundingRectangle(tail_mobs[0], color=ORANGE, buff=0.04, stroke_width=3)
         self.play(Write(rule))
@@ -620,18 +681,93 @@ class RoundoffError(Scene):
             self.play(FadeIn(plus_one))
             self.play(*[Transform(kept_mobs[i], Text(m_bits[i], font=MONO, font_size=14, color=ORANGE).move_to(kept_mobs[i])) for i in changed])
             self.wait(1)
-            self.play(FadeOut(plus_one), *[kept_mobs[i].animate.set_color(WHITE) for i in changed])
+            self.play(FadeOut(plus_one), *[kept_mobs[i].animate.set_color(MANT_COLOR) for i in changed])
 
         self.play(FadeOut(kept_box), FadeOut(kept_label), FadeOut(rule), FadeOut(case_text))
         self.play(*[kept_mobs[i].animate.move_to(cells[12 + i]) for i in range(MANT_BITS)], run_time=1.5)
         self.play(Circumscribe(cells, color=YELLOW, buff=0.05))
         self.wait(0.5)
 
+        # Decode the displayed fields exactly before presenting the error.
+        M = int(m_bits, 2)
+        decoded = decode_fields(s_bit, e_bits, m_bits)
+        assert decoded == stored
+        decode_title = caption("Step 5. Recalculate the value from the stored bits", y=1.4)
+        decode_formula = MathTex(
+            "x =", "(-1)^{S}", r"\cdot", "2^{E-B}", r"\cdot",
+            r"\left(1+\frac{M}{2^{52}}\right)", font_size=36,
+        ).set_y(0.55)
+        decode_formula[1].set_color(SIGN_COLOR)
+        decode_formula[3].set_color(EXP_COLOR)
+        decode_formula[5].set_color(MANT_COLOR)
+        field_values = MathTex(
+            rf"S = {s_bit}", r",\quad", rf"E = {E}", r",\quad",
+            rf"B = {BIAS}", r",\quad", rf"M = {M}",
+            font_size=30,
+        ).set_y(-0.35)
+        field_values[0].set_color(SIGN_COLOR)
+        field_values[2].set_color(EXP_COLOR)
+        field_values[4].set_color(EXP_COLOR)
+        field_values[6].set_color(MANT_COLOR)
+        format_note = Text(
+            "B is the bias; 52 is the mantissa width; the leading 1 is implicit.",
+            font_size=22, color=GREY_B,
+        ).set_y(-1.05)
+        weights = [rf"2^{{{MANT_BITS - 1 - i}}}" for i, bit in enumerate(m_bits) if bit == "1"]
+        mantissa_sum = VGroup()
+        for offset in range(0, len(weights), 9):
+            chunk = "+".join(weights[offset:offset + 9])
+            chunk = ("M = " if offset == 0 else "+ ") + chunk
+            if offset + 9 >= len(weights):
+                chunk += rf" = {M}"
+            line = MathTex(chunk, font_size=25, color=MANT_COLOR)
+            if line.width > 12.8:
+                line.scale_to_fit_width(12.8)
+            mantissa_sum.add(line)
+        mantissa_sum.arrange(DOWN, buff=0.1).set_y(-2.0)
+        substitution = MathTex(
+            "=", rf"(-1)^{{{s_bit}}}", r"\cdot", rf"2^{{{E}-{BIAS}}}",
+            r"\cdot", rf"\left(1+\frac{{{M}}}{{2^{{{MANT_BITS}}}}}\right)", font_size=36,
+        ).set_y(-1.25)
+        substitution[1].set_color(SIGN_COLOR)
+        substitution[3].set_color(EXP_COLOR)
+        substitution[5].set_color(MANT_COLOR)
+        exact_fraction = MathTex(
+            rf"= \frac{{{2**MANT_BITS + M}}}{{2^{{{MANT_BITS - e}}}}}"
+            rf"= \frac{{{decoded.numerator}}}{{{decoded.denominator}}}", font_size=36,
+        ).set_y(-2.15)
+        decimal_result = MathTex(r"= " + exact_decimal(decoded), font_size=32)
+        if decimal_result.width > 12.8:
+            decimal_result.scale_to_fit_width(12.8)
+        decimal_result.set_y(-3.1)
+        self.play(FadeIn(decode_title))
+        self.play(Write(decode_formula), run_time=2)
+        self.play(Write(field_values[1]), Write(field_values[3]), Write(field_values[5]))
+        self.play(TransformFromCopy(bit_mobs[0], field_values[0]), run_time=1)
+        self.play(TransformFromCopy(bit_mobs[1:12], field_values[2]), run_time=1)
+        self.play(Write(field_values[4]), FadeIn(format_note))
+        self.play(TransformFromCopy(kept_mobs, field_values[6]), run_time=1.5)
+        self.play(Indicate(cells[12:], color=MANT_COLOR), Write(mantissa_sum), run_time=2)
+        self.wait(3)
+        self.play(FadeOut(mantissa_sum), FadeOut(format_note))
+        self.play(Write(substitution[0]), Write(substitution[2]), Write(substitution[4]))
+        for part, sources, color in (
+            (1, (0,), SIGN_COLOR), (3, (2, 4), EXP_COLOR), (5, (6,), MANT_COLOR),
+        ):
+            self.play(*[Indicate(field_values[i], color=color) for i in sources], run_time=0.7)
+            self.play(TransformFromCopy(decode_formula[part], substitution[part]), run_time=1.3)
+        self.play(Write(exact_fraction), run_time=2)
+        self.play(Write(decimal_result), run_time=2)
+        self.wait(3)
+        self.play(*[FadeOut(mob) for mob in (
+            decode_title, decode_formula, field_values, substitution, exact_fraction, decimal_result
+        )])
+
         # --- stored value vs true value ---
         error = stored - true_value
         rel = abs(error) / true_value
         eps = Fraction(1, 2**MANT_BITS)
-        cap = caption("What is actually stored", y=1.4)
+        cap = caption("Step 6. Compare the stored value with the exact value", y=1.4)
         stored_line = MathTex(r"\text{stored} = " + exact_decimal(stored), font_size=34)
         if stored_line.width > 13:
             stored_line.scale_to_fit_width(13)
