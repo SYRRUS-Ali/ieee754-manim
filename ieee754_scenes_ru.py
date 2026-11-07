@@ -191,6 +191,7 @@ class BuildDoubleRU(Scene):
         formula[1].set_color(SIGN_COLOR)
         formula[3].set_color(EXP_COLOR)
         formula[5].set_color(MANT_COLOR)
+        formula[5][1].set_color(WHITE)  # The implicit leading 1 is not part of M.
         self.play(Write(formula), run_time=2)
         self.wait(1.5)
 
@@ -588,7 +589,7 @@ class RoundoffErrorRU(Scene):
         tail_box.move_to([tail_left + 4 + 0.02, row_y, 0])
         kept_label = ru_text(f"В мантиссе помещается {MANT_BITS} бита", font_size=22, color=MANT_COLOR)
         kept_label.next_to(kept_box, DOWN, buff=0.2)
-        tail_label = ru_text("Остаток", font_size=24, color=TAIL_COLOR).next_to(tail_box, DOWN, buff=0.2)
+        tail_label = ru_text("Ошибка", font_size=24, color=TAIL_COLOR).next_to(tail_box, DOWN, buff=0.2)
         tail_label.set_x((tail_left + 7.1) / 2)
         self.play(Create(kept_box), FadeIn(kept_label))
         self.play(FadeIn(tail_box), FadeIn(tail_label))
