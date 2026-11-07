@@ -461,92 +461,6 @@ class RoundoffErrorRU(Scene):
         E = int(e_bits, 2)
         x_str = exact_decimal(true_value)
 
-        # --- intro ---
-        title = ru_text("Погрешность округления", font_size=48).to_edge(UP, buff=0.8)
-        big = MathTex(f"x = {x_str}", font_size=96)
-        question = ru_text("Просто в десятичной системе. А что хранит компьютер?", font_size=28, color=GREY_B)
-        question.next_to(big, DOWN, buff=0.7)
-        self.play(Write(title))
-        self.play(Write(big))
-        self.play(FadeIn(question))
-        self.wait(1.5)
-        self.play(FadeOut(title), FadeOut(question), FadeOut(big))
-
-        # --- multiply by 2 method for the fraction part ---
-        int_part = true_value.numerator // true_value.denominator
-        cap = ru_text("Шаг 1. Перевод дроби в двоичную систему: умножаем на 2", font_size=26)
-        cap.to_edge(UP, buff=0.6)
-        steps = times_two_steps(true_value - int_part, 8)
-        lines = VGroup()
-        for frac, product, digit, _ in steps:
-            line = MathTex(
-                exact_decimal(frac), r"\cdot 2 =", exact_decimal(product), r"\;\rightarrow\;", str(digit),
-                font_size=38,
-            )
-            line[0].set_color(MANT_COLOR)
-            line[4].set_color(YELLOW)
-            lines.add(line)
-        lines.arrange(DOWN, aligned_edge=LEFT, buff=0.22).move_to([-3.2, -0.4, 0])
-        legend = ru_text(f"Начинаем с {x_str}; далее берём дробную часть произведения.", font_size=23, color=GREY_B)
-        legend.next_to(cap, DOWN, buff=0.3)
-        self.play(FadeIn(cap), FadeIn(legend))
-        bits_so_far = "".join(str(d) for _, _, d, _ in steps)
-        collected_digits = VGroup(*[
-            ru_text(d, font=MONO, font_size=30, color=YELLOW) for d in bits_so_far
-        ]).arrange(RIGHT, buff=0.06)
-        collected_prefix = MathTex(rf"{x_str} = {int_part}.", font_size=36)
-        collected_suffix = MathTex(r"\ldots_2", font_size=36)
-        collected = VGroup(collected_prefix, collected_digits, collected_suffix)
-        collected.arrange(RIGHT, buff=0.08).move_to([3.2, -1.0, 0])
-        order_note = ru_text('Читаем сверху вниз; биты пишем слева направо.', font_size=22, color=YELLOW)
-        if order_note.width > 6.5:
-            order_note.scale_to_fit_width(6.5)
-        order_note.next_to(collected, DOWN, buff=0.35)
-        self.play(Write(collected_prefix), FadeIn(order_note))
-        deОстаток = VGroup()
-        previous_remainder = None
-        for i, (frac, product, digit, _) in enumerate(steps):
-            remainder = product - digit
-            detail_new = VGroup(
-                ru_text("Выделяем целую и дробную части", font_size=22, color=GREY_B),
-                MathTex(exact_decimal(product), "=", str(digit), "+", exact_decimal(remainder), font_size=34),
-                MathTex(r"r_{i+1} =", exact_decimal(product), "-", str(digit), "=", exact_decimal(remainder), font_size=30),
-            ).arrange(DOWN, buff=0.22).move_to([3.2, 1.0, 0])
-            detail_new[1][2].set_color(YELLOW)
-            detail_new[1][4].set_color(MANT_COLOR)
-            detail_new[2][3].set_color(YELLOW)
-            detail_new[2][5].set_color(MANT_COLOR)
-            if previous_remainder is None:
-                self.play(FadeIn(lines[i][:4], shift=DOWN * 0.1), run_time=0.8)
-            else:
-                self.play(TransformFromCopy(previous_remainder, lines[i][0], path_arc=PI / 4), run_time=1.3)
-                self.play(FadeIn(lines[i][1:4]), run_time=0.6)
-            self.play(FadeOut(deОстаток), FadeIn(detail_new))
-            deОстаток = detail_new
-            self.play(Indicate(deОстаток[1][2], color=YELLOW), run_time=0.6)
-            self.play(TransformFromCopy(deОстаток[1][2], lines[i][4]), run_time=0.8)
-            self.play(TransformFromCopy(lines[i][4], collected_digits[i], path_arc=-PI / 4), run_time=1.3)
-            self.play(Indicate(deОстаток[2][5], color=MANT_COLOR), run_time=0.6)
-            previous_remainder = deОстаток[2][5]
-            self.wait(0.7)
-        self.play(Write(collected_suffix))
-        if steps and steps[-1][3]:
-            # the fraction came back to an earlier value, so the bits repeat forever
-            first = next(i for i, s in enumerate(steps) if s[0] == steps[-1][0])
-            boxes = VGroup(
-                SurroundingRectangle(lines[first][:3], color=ORANGE, buff=0.06),
-                SurroundingRectangle(lines[-1][:3], color=ORANGE, buff=0.06),
-            )
-            repeat_note = ru_text("Значение повторилось: биты будут повторяться", font_size=24, color=ORANGE)
-            repeat_note.next_to(lines, DOWN, buff=0.35).align_to(lines, LEFT)
-            self.play(Create(boxes), FadeIn(repeat_note))
-        else:
-            boxes = VGroup()
-            repeat_note = VGroup()
-        self.wait(2)
-        self.play(FadeOut(cap), FadeOut(lines), FadeOut(boxes), FadeOut(repeat_note), FadeOut(collected),
-                  FadeOut(legend), FadeOut(deОстаток), FadeOut(order_note))
-
         # --- long binary row, more bits than a double can hold ---
         int_bits, frac_bits = binary_expansion(true_value, SCENE2_FRAC_BITS)
         digits = int_bits + frac_bits
@@ -559,13 +473,25 @@ class RoundoffErrorRU(Scene):
             return [(row[k - 1].get_x() + row[k].get_x()) / 2, row[0].get_bottom()[1] + 0.05, 0]
 
         dot = Dot(radius=0.05).move_to(point_at(len(int_bits)))
-        cap = ru_text(f"Итог шага 1. {x_str}: первые {SCENE2_FRAC_BITS} бит бесконечной двоичной дроби", font_size=25)
+        cap = ru_text(f"Шаг 1. {x_str}: первые {SCENE2_FRAC_BITS} бит бесконечной двоичной дроби", font_size=25)
         cap.to_edge(UP, buff=0.6)
+        decimal_prefix = VGroup(
+            ru_text(x_str, font=MONO, font_size=30),
+            ru_text("=", font=MONO, font_size=30),
+        ).arrange(RIGHT, buff=0.15)
+        decimal_prefix.next_to(row[0], LEFT, buff=0.25)
+        # Make room for the decimal value while keeping the later layout intact.
+        opening_shift = LEFT * (config.frame_width / 2 - 0.7 + decimal_prefix.get_left()[0])
+        binary_line = VGroup(decimal_prefix, row, dot)
+        binary_line.shift(opening_shift)
         self.play(FadeIn(cap))
+        self.play(Write(decimal_prefix[0]))
+        self.play(Write(decimal_prefix[1]))
         self.play(FadeIn(row[: len(int_bits)]), FadeIn(dot))
         self.play(LaggedStart(*[FadeIn(d) for d in row[len(int_bits):]], lag_ratio=0.03), run_time=3)
-        self.play(VGroup(row, dot).animate.shift(LEFT * 14), run_time=2.5)
-        self.play(VGroup(row, dot).animate.shift(RIGHT * 14), run_time=1.5)
+        self.play(binary_line.animate.shift(LEFT * 14), run_time=2.5)
+        self.play(binary_line.animate.shift(RIGHT * 14), run_time=1.5)
+        self.play(FadeOut(decimal_prefix), VGroup(row, dot).animate.shift(-opening_shift))
 
         # --- normalize ---
         e, lead = normalize(int_bits, frac_bits)
